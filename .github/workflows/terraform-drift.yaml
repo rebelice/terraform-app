@@ -1,0 +1,121 @@
+name: Terraform Drift Detection
+on:
+  schedule:
+    # Run daily at 9:00 AM UTC
+    - cron: '0 9 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  drift-detection:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.0"
+
+      # Restore state from previous deployment
+      - name: Download State
+        id: download-state
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          name: terraform-state
+          path: .
+          search_artifacts: true
+          if_no_artifact_found: fail
+        continue-on-error: true
+
+      - name: Check State Exists
+        id: check-state
+        run: |
+          if [ ! -f "terraform.tfstate" ]; then
+            echo "has_state=false" >> $GITHUB_OUTPUT
+            echo "::warning::No terraform state found. Drift detection skipped."
+          else
+            echo "has_state=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Terraform Init
+        if: steps.check-state.outputs.has_state == 'true'
+        run: terraform init
+
+      - name: Detect Drift
+        if: steps.check-state.outputs.has_state == 'true'
+        id: drift
+        run: |
+          echo "### Drift Detection Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          set +e
+          terraform plan -detailed-exitcode -no-color 2>&1 | tee drift.txt
+          EXITCODE=$?
+          set -e
+
+          if [ $EXITCODE -eq 0 ]; then
+            echo "has_drift=false" >> $GITHUB_OUTPUT
+            echo "No drift detected. Infrastructure matches configuration." >> $GITHUB_STEP_SUMMARY
+          elif [ $EXITCODE -eq 2 ]; then
+            echo "has_drift=true" >> $GITHUB_OUTPUT
+            echo "**Drift detected!** Infrastructure has diverged from configuration." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### Differences:" >> $GITHUB_STEP_SUMMARY
+            echo '```hcl' >> $GITHUB_STEP_SUMMARY
+            cat drift.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "has_drift=error" >> $GITHUB_OUTPUT
+            echo "**Error during drift detection.**" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat drift.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Create Issue on Drift
+        if: steps.drift.outputs.has_drift == 'true'
+        run: |
+          gh issue create \
+            --title "Terraform Drift Detected - $(date -u '+%Y-%m-%d')" \
+            --body "## Infrastructure Drift Alert
+
+          Terraform has detected configuration drift in the infrastructure.
+
+          **Detection Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+
+          ### Action Required
+          1. Review the drift in the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          2. Determine if this was an authorized change
+          3. Either:
+             - Update Terraform configuration to reflect the change, or
+             - Run \`terraform apply\` to restore the expected state
+
+          ### Possible Causes
+          - Manual changes via Docker CLI
+          - Container restarts or crashes
+          - External automation
+          - Resource cleanup
+
+          ### Drift Details
+          \`\`\`
+          $(head -100 drift.txt)
+          \`\`\`
+
+          cc @${{ github.repository_owner }}" \
+            --label "drift,infrastructure,attention"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: No State Warning
+        if: steps.check-state.outputs.has_state == 'false'
+        run: |
+          echo "### Drift Detection Skipped" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "No Terraform state file found. Deploy infrastructure first." >> $GITHUB_STEP_SUMMARY

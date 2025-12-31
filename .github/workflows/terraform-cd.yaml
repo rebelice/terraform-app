@@ -1,0 +1,148 @@
+name: Terraform CD
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  # Stage 1: Plan and store artifacts
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      plan_exitcode: ${{ steps.plan.outputs.exitcode }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.0"
+
+      # Restore state from previous runs
+      - name: Download State
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          name: terraform-state
+          path: .
+          search_artifacts: true
+          if_no_artifact_found: warn
+        continue-on-error: true
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Generate Release Plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -detailed-exitcode -out=release.tfplan 2>&1 | tee plan.txt
+          echo "exitcode=$?" >> $GITHUB_OUTPUT
+          set -e
+
+      - name: Export Plan Details
+        run: |
+          terraform show -no-color release.tfplan > plan-details.txt
+          terraform show -json release.tfplan > plan.json
+
+      - name: Upload Plan Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ github.ref_name }}
+          path: |
+            release.tfplan
+            plan.txt
+            plan-details.txt
+            plan.json
+          retention-days: 30
+
+      - name: Plan Summary
+        run: |
+          echo "## Terraform Release Plan - ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Plan Output" >> $GITHUB_STEP_SUMMARY
+          echo '```hcl' >> $GITHUB_STEP_SUMMARY
+          cat plan-details.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  # Stage 2: Deploy (requires manual approval via GitHub Environment)
+  deploy:
+    needs: plan
+    if: needs.plan.outputs.plan_exitcode == '2'  # Only if there are changes
+    runs-on: ubuntu-latest
+    environment: production  # Requires approval in GitHub Settings
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.0"
+
+      # Restore state
+      - name: Download State
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          name: terraform-state
+          path: .
+          search_artifacts: true
+          if_no_artifact_found: warn
+        continue-on-error: true
+
+      - name: Download Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan-${{ github.ref_name }}
+          path: .
+
+      - name: Terraform Init
+        run: terraform init
+
+      # Verify plan is still valid
+      - name: Verify Plan
+        id: verify
+        run: |
+          echo "Verifying saved plan is still valid..."
+          terraform show release.tfplan
+
+      - name: Apply Plan
+        run: |
+          terraform apply -auto-approve release.tfplan
+
+      # Save state after apply
+      - name: Upload State
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-state
+          path: |
+            terraform.tfstate
+            terraform.tfstate.backup
+          retention-days: 90
+          overwrite: true
+
+      - name: Deploy Summary
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Deploy Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+
+  # Stage 3: No changes
+  no-changes:
+    needs: plan
+    if: needs.plan.outputs.plan_exitcode == '0'
+    runs-on: ubuntu-latest
+    steps:
+      - name: No Changes Summary
+        run: |
+          echo "## No Changes Detected" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Infrastructure is already up to date with the configuration." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
