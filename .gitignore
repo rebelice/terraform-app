@@ -25,3 +25,6 @@ Thumbs.db
 
 # Local files
 *.local.tfvars
+
+# Output directory
+output/
