@@ -34,3 +34,8 @@ output "deployment_summary" {
     instance_id = random_id.suffix.hex
   }
 }
+
+output "monitoring_config_path" {
+  description = "Path to monitoring config file"
+  value       = local_file.monitoring_config.filename
+}

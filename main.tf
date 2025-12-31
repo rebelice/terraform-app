@@ -96,7 +96,26 @@ resource "local_file" "readme" {
     - app-config.json: Application settings
     - db-config.json: Database connection
     - cache-config.json: Redis cache settings
+    - monitoring-config.json: Monitoring settings
   EOT
+
+  file_permission = "0644"
+}
+
+# Monitoring configuration file
+resource "local_file" "monitoring_config" {
+  filename = "${path.module}/output/${var.environment}/monitoring-config.json"
+  content = jsonencode({
+    metrics = {
+      enabled  = var.metrics_enabled
+      endpoint = var.metrics_endpoint
+      interval = var.metrics_interval
+    }
+    alerting = {
+      enabled   = var.alerting_enabled
+      threshold = var.alert_threshold
+    }
+  })
 
   file_permission = "0644"
 }
