@@ -91,3 +91,34 @@ variable "cache_ttl" {
   type        = number
   default     = 3600
 }
+
+# Monitoring settings
+variable "metrics_enabled" {
+  description = "Enable metrics collection"
+  type        = bool
+  default     = true
+}
+
+variable "metrics_endpoint" {
+  description = "Metrics endpoint URL"
+  type        = string
+  default     = "/metrics"
+}
+
+variable "metrics_interval" {
+  description = "Metrics collection interval in seconds"
+  type        = number
+  default     = 60
+}
+
+variable "alerting_enabled" {
+  description = "Enable alerting"
+  type        = bool
+  default     = true
+}
+
+variable "alert_threshold" {
+  description = "Alert threshold percentage"
+  type        = number
+  default     = 80
+}
