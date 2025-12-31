@@ -19,6 +19,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.6.0"
+          terraform_wrapper: false
 
       # Restore state from previous runs (for testing purposes)
       - name: Download State
