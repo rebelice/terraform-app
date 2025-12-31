@@ -100,3 +100,41 @@ resource "docker_container" "nginx" {
     read_only      = true
   }
 }
+
+# PostgreSQL container for database
+resource "docker_image" "postgres" {
+  name         = "postgres:${var.postgres_version}"
+  keep_locally = true
+}
+
+resource "docker_container" "postgres" {
+  name  = "${var.app_name}-postgres"
+  image = docker_image.postgres.image_id
+
+  networks_advanced {
+    name = docker_network.app_network.name
+  }
+
+  labels {
+    label = "environment"
+    value = var.environment
+  }
+
+  labels {
+    label = "managed_by"
+    value = "terraform"
+  }
+
+  restart = "unless-stopped"
+
+  ports {
+    internal = 5432
+    external = var.postgres_port
+  }
+
+  env = [
+    "POSTGRES_USER=${var.postgres_user}",
+    "POSTGRES_PASSWORD=${var.postgres_password}",
+    "POSTGRES_DB=${var.postgres_db}"
+  ]
+}

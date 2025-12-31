@@ -29,3 +29,13 @@ output "redis_url" {
   description = "URL to connect to Redis"
   value       = "redis://localhost:${var.redis_port}"
 }
+
+output "postgres_container_id" {
+  description = "ID of the PostgreSQL container"
+  value       = docker_container.postgres.id
+}
+
+output "postgres_url" {
+  description = "URL to connect to PostgreSQL"
+  value       = "postgresql://${var.postgres_user}:****@localhost:${var.postgres_port}/${var.postgres_db}"
+}

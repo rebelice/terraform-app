@@ -47,3 +47,34 @@ variable "nginx_config_path" {
   type        = string
   default     = "/tmp/nginx-conf"
 }
+
+variable "postgres_version" {
+  description = "PostgreSQL image version"
+  type        = string
+  default     = "15-alpine"
+}
+
+variable "postgres_port" {
+  description = "External port for PostgreSQL"
+  type        = number
+  default     = 5432
+}
+
+variable "postgres_user" {
+  description = "PostgreSQL user"
+  type        = string
+  default     = "app"
+}
+
+variable "postgres_password" {
+  description = "PostgreSQL password"
+  type        = string
+  default     = "secret"
+  sensitive   = true
+}
+
+variable "postgres_db" {
+  description = "PostgreSQL database name"
+  type        = string
+  default     = "appdb"
+}
